@@ -1,1 +1,365 @@
-<h1>Hello, welcome to my site!</h1>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋 - 双人对战</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f5f5dc;
+            font-family: 'Microsoft YaHei', '苹方', sans-serif;
+        }
+        h1 {
+            margin: 10px 0;
+            color: #333;
+            letter-spacing: 4px;
+        }
+        .status {
+            font-size: 1.4em;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #2c3e50;
+            background: #fff;
+            padding: 6px 24px;
+            border-radius: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        canvas {
+            display: block;
+            margin: 10px auto;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            border-radius: 12px;
+            background: #f0d9b5;
+            cursor: pointer;
+        }
+        button {
+            margin-top: 16px;
+            padding: 10px 30px;
+            font-size: 1.2em;
+            background: #4a6741;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            transition: background 0.2s;
+            letter-spacing: 2px;
+        }
+        button:hover {
+            background: #3b5434;
+        }
+        .footer {
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <h1>⚫ 五子棋 ⚪</h1>
+    <div class="status" id="status">黑子回合</div>
+    <canvas id="board" width="600" height="600"></canvas>
+    <button id="restartBtn">🔄 重新开始</button>
+    <div class="footer">点击棋盘交叉点落子 | 黑子先行</div>
+
+    <script>
+        (function() {
+            const canvas = document.getElementById('board');
+            const ctx = canvas.getContext('2d');
+            const statusDiv = document.getElementById('status');
+
+            // 棋盘配置
+            const BOARD_SIZE = 15;            // 15x15
+            const CELL_SIZE = 40;             // 格子宽度/高度（像素）
+            const MARGIN = 30;                // 棋盘边距（留出坐标显示和点击区域）
+            const PIECE_RADIUS = 16;          // 棋子半径
+
+            // 游戏状态
+            let board = [];                   // 二维数组 0空 1黑 2白
+            let currentPlayer = 1;            // 1:黑子(先手)  2:白子
+            let gameOver = false;
+            let winner = 0;                   // 0无 1黑胜 2白胜
+            let winLine = [];                 // 获胜棋子坐标 [{row, col}, ...]
+
+            // 初始化棋盘数组
+            function initBoard() {
+                board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+                currentPlayer = 1;
+                gameOver = false;
+                winner = 0;
+                winLine = [];
+                updateStatus();
+                drawBoard();
+            }
+
+            // 根据鼠标坐标获取最近的棋盘交叉点（若在有效范围内）
+            function getBoardPosition(clientX, clientY) {
+                const rect = canvas.getBoundingClientRect();
+                // 计算相对于canvas绘图区的坐标（考虑CSS缩放，canvas像素尺寸固定）
+                const scaleX = canvas.width / rect.width;   // canvas实际像素与CSS尺寸比例
+                const scaleY = canvas.height / rect.height;
+
+                const mouseX = (clientX - rect.left) * scaleX;
+                const mouseY = (clientY - rect.top) * scaleY;
+
+                // 计算最近的列和行
+                const col = Math.round((mouseX - MARGIN) / CELL_SIZE);
+                const row = Math.round((mouseY - MARGIN) / CELL_SIZE);
+
+                // 检查行列是否在有效范围
+                if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
+                    return null;
+                }
+
+                // 计算交叉点实际绘图坐标
+                const pointX = MARGIN + col * CELL_SIZE;
+                const pointY = MARGIN + row * CELL_SIZE;
+
+                // 允许点击误差在棋子半径内（稍宽容一些）
+                const distance = Math.hypot(mouseX - pointX, mouseY - pointY);
+                if (distance <= PIECE_RADIUS + 2) {
+                    return { row, col };
+                }
+                return null;
+            }
+
+            // 尝试落子
+            function placePiece(row, col) {
+                if (gameOver) return false;
+                if (board[row][col] !== 0) return false; // 已有棋子
+
+                // 落子
+                board[row][col] = currentPlayer;
+                drawBoard();
+
+                // 检查是否获胜
+                if (checkWin(row, col, currentPlayer)) {
+                    gameOver = true;
+                    winner = currentPlayer;
+                    updateStatus();
+                    drawBoard(); // 重绘以显示高亮连线
+                    return true;
+                }
+
+                // 检查平局（棋盘已满）
+                if (isBoardFull()) {
+                    gameOver = true;
+                    winner = 0; // 平局
+                    updateStatus();
+                    drawBoard();
+                    return true;
+                }
+
+                // 切换玩家
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                updateStatus();
+                return true;
+            }
+
+            // 检查棋盘是否已满
+            function isBoardFull() {
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (board[r][c] === 0) return false;
+                    }
+                }
+                return true;
+            }
+
+            // 从落子点(row, col)检查玩家player是否五连
+            function checkWin(row, col, player) {
+                // 四个方向：水平、垂直、主对角线、副对角线
+                const directions = [
+                    [0, 1],   // 水平
+                    [1, 0],   // 垂直
+                    [1, 1],   // 主对角线
+                    [1, -1]   // 副对角线
+                ];
+
+                for (const [dx, dy] of directions) {
+                    const line = [[row, col]];
+                    // 正方向延伸
+                    for (let step = 1; step < 5; step++) {
+                        const r = row + dx * step;
+                        const c = col + dy * step;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
+                            line.push([r, c]);
+                        } else {
+                            break;
+                        }
+                    }
+                    // 反方向延伸
+                    for (let step = 1; step < 5; step++) {
+                        const r = row - dx * step;
+                        const c = col - dy * step;
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
+                            line.unshift([r, c]);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // 是否达到五连或以上
+                    if (line.length >= 5) {
+                        // 保存获胜连线（可能多于5个，但高亮只取连续5个，这里存储所有连续格子方便绘制）
+                        winLine = line.map(([r, c]) => ({ row: r, col: c }));
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // 更新状态文字
+            function updateStatus() {
+                if (gameOver) {
+                    if (winner === 1) {
+                        statusDiv.textContent = '🎉 黑子获胜！';
+                        statusDiv.style.color = '#2c3e50';
+                    } else if (winner === 2) {
+                        statusDiv.textContent = '🎉 白子获胜！';
+                        statusDiv.style.color = '#2c3e50';
+                    } else {
+                        statusDiv.textContent = '🤝 平局！棋盘已满';
+                        statusDiv.style.color = '#8e44ad';
+                    }
+                } else {
+                    statusDiv.textContent = currentPlayer === 1 ? '⚫ 黑子回合' : '⚪ 白子回合';
+                    statusDiv.style.color = '#2c3e50';
+                }
+            }
+
+            // 绘制棋盘和棋子
+            function drawBoard() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 绘制棋盘网格线
+                ctx.strokeStyle = '#5d4e37';
+                ctx.lineWidth = 1.5;
+
+                // 画水平线和垂直线
+                for (let i = 0; i < BOARD_SIZE; i++) {
+                    const pos = MARGIN + i * CELL_SIZE;
+                    // 水平线
+                    ctx.beginPath();
+                    ctx.moveTo(MARGIN, pos);
+                    ctx.lineTo(MARGIN + (BOARD_SIZE - 1) * CELL_SIZE, pos);
+                    ctx.stroke();
+                    // 垂直线
+                    ctx.beginPath();
+                    ctx.moveTo(pos, MARGIN);
+                    ctx.lineTo(pos, MARGIN + (BOARD_SIZE - 1) * CELL_SIZE);
+                    ctx.stroke();
+                }
+
+                // 绘制星位（天元和星）
+                const starPoints = [
+                    [3, 3], [3, 7], [3, 11],
+                    [7, 3], [7, 7], [7, 11],
+                    [11, 3], [11, 7], [11, 11]
+                ];
+                ctx.fillStyle = '#5d4e37';
+                for (const [r, c] of starPoints) {
+                    const x = MARGIN + c * CELL_SIZE;
+                    const y = MARGIN + r * CELL_SIZE;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+
+                // 绘制所有棋子
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (board[r][c] === 0) continue;
+                        const x = MARGIN + c * CELL_SIZE;
+                        const y = MARGIN + r * CELL_SIZE;
+
+                        // 创建径向渐变增加立体感
+                        const gradient = ctx.createRadialGradient(x - 3, y - 3, 2, x, y, PIECE_RADIUS);
+                        if (board[r][c] === 1) { // 黑子
+                            gradient.addColorStop(0, '#555');
+                            gradient.addColorStop(0.7, '#111');
+                            gradient.addColorStop(1, '#000');
+                        } else { // 白子
+                            gradient.addColorStop(0, '#fff');
+                            gradient.addColorStop(0.5, '#f0f0f0');
+                            gradient.addColorStop(1, '#aaa');
+                        }
+
+                        ctx.beginPath();
+                        ctx.arc(x, y, PIECE_RADIUS, 0, 2 * Math.PI);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                        // 边缘描边
+                        ctx.strokeStyle = board[r][c] === 1 ? '#000' : '#888';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        // 如果是黑子，加一点高光
+                        if (board[r][c] === 1) {
+                            ctx.beginPath();
+                            ctx.arc(x - 3, y - 3, 3, 0, 2 * Math.PI);
+                            ctx.fillStyle = '#888';
+                            ctx.fill();
+                        }
+                    }
+                }
+
+                // 如果游戏结束且有获胜连线，高亮显示连线（绘制红色圆框或连线标记）
+                if (gameOver && winner !== 0 && winLine.length > 0) {
+                    ctx.strokeStyle = '#e74c3c';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    // 画出连线，依次连接获胜棋子
+                    const first = winLine[0];
+                    const startX = MARGIN + first.col * CELL_SIZE;
+                    const startY = MARGIN + first.row * CELL_SIZE;
+                    ctx.moveTo(startX, startY);
+                    for (let i = 1; i < winLine.length; i++) {
+                        const p = winLine[i];
+                        const px = MARGIN + p.col * CELL_SIZE;
+                        const py = MARGIN + p.row * CELL_SIZE;
+                        ctx.lineTo(px, py);
+                    }
+                    ctx.stroke();
+
+                    // 在每个获胜棋子上加一个高亮圆环
+                    ctx.strokeStyle = '#e74c3c';
+                    ctx.lineWidth = 2.5;
+                    for (const p of winLine) {
+                        const px = MARGIN + p.col * CELL_SIZE;
+                        const py = MARGIN + p.row * CELL_SIZE;
+                        ctx.beginPath();
+                        ctx.arc(px, py, PIECE_RADIUS + 3, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+
+                // 如果平局，可以在角落显示文字（可省略）
+            }
+
+            // 点击棋盘事件
+            canvas.addEventListener('click', (e) => {
+                if (gameOver) return;
+
+                const pos = getBoardPosition(e.clientX, e.clientY);
+                if (pos) {
+                    placePiece(pos.row, pos.col);
+                }
+            });
+
+            // 重新开始按钮
+            document.getElementById('restartBtn').addEventListener('click', () => {
+                initBoard();
+            });
+
+            // 页面加载完成后初始化
+            initBoard();
+        })();
+    </script>
+</body>
+</html>
